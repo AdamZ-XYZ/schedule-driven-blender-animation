@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.env
+.venv/
+env/
+envs/
+*.egg-info/
+.DS_Store
+
+# Blender
+*.blend1
+*.blend2
+
+# Outputs
+renders/
+output/
+*.mp4
+*.png
+
+# IDE
+.vscode/
+.idea/
+
