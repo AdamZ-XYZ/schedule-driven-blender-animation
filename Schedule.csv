@@ -1,6 +1,5 @@
-﻿Activity,Start,End
-Cube,1,20
-Cube.001,1,30
-Cube.002,20,30
-Cube.003,5,35
-Cube,35,45
+﻿Activity,Start,End,WBS
+Cube,1,2,x.y
+Cube.001,1,2,x.y.z
+Cube.002,1,2,a.b
+Cube.003,1,2,m

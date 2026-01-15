@@ -3,6 +3,7 @@ import pandas as pd
 import argparse
 import os
 import subprocess
+import sys
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -11,19 +12,37 @@ def parse_args():
 
     parser.add_argument(
         "blend_file",
-        help="Path to Blender .blend file"
+        help="Path to Blender .blend file",
     )
 
     parser.add_argument(
         "schedule_input",
-        help="Path to schedule CSV file"
+        help="Path to schedule CSV file",
     )
 
-    return parser.parse_args()
+    parser.add_argument(
+        "--visual_type",
+        choices=["Simple","WBS"],
+        default="Simple",
+        help="default: 'Simple', else: 'WBS'",
+        required = False
+    )
+
+    parser.add_argument(
+        "--top_wbs",
+        help="Top-level WBS to filter from (required if visual-type=WBS)"
+    )
+
+    return parser
 
 
 def main():
-    args = parse_args()
+    parser = parse_args()
+    args = parser.parse_args()
+
+    if args.visual_type == "WBS" and not args.top_wbs:
+        parser.error("--top_wbs is required when --visual-type=WBS")
+        exit()
 
     blend_file = os.path.abspath(args.blend_file)
 
@@ -59,7 +78,25 @@ def main():
 
         schedule = pd.read_csv(schedule_csv)
 
+        # WBS Filtering - Re Rooting Approach
+        top_wbs = args.top_wbs
+        mask = schedule["WBS"].astype(str).apply(
+            lambda wbs: top_wbs in wbs.split(".")
+        )
+        schedule = schedule[mask]
+        
+        def reroot_wbs(wbs, root):
+            parts = wbs.split(".")
+            idx = parts.index(root)
+            return ".".join(parts[idx:])
+        
+        schedule["WBS"] = schedule["WBS"].apply(
+            lambda wbs: reroot_wbs(wbs, top_wbs)
+        )
+
+
         for row in schedule.to_dict(orient="records"):
+            
             start = row["Start"]
             end   = row["End"]
             if end < start:
