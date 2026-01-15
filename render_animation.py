@@ -8,6 +8,8 @@ import time
 
 t0 = time.perf_counter()
 
+
+
 argv = sys.argv
 argv = argv[argv.index("--") + 1:]
 
@@ -15,6 +17,7 @@ if len(argv) != 2:
     raise RuntimeError("Expected arguments: <processed_schedule.csv> <output_dir>")
 
 schedule_csv = argv[0]
+print("CSV BEING READ:", schedule_csv)
 run_dir = argv[1]
 
 os.makedirs(run_dir, exist_ok=True)
@@ -23,7 +26,7 @@ frames_dir = os.path.join(run_dir, "frames")
 os.makedirs(frames_dir, exist_ok=True)
 
 
-csv_path = sys.argv[sys.argv.index("--") + 1]
+
 
 
 #Scene Setup
@@ -43,13 +46,16 @@ scene.render.resolution_y =  720
 
 # Load Processed Schedule
 rows = []
-with open(csv_path, newline="") as f:
+with open(schedule_csv, newline="") as f:
     reader = csv.DictReader(f)
     for row in reader:
         rows.append({
             "Activity": row["Activity"],
             "Start Frame": int(row["Start Frame"]),
             "End Frame": int(row["End Frame"]),
+            "Color_R": float(row["Color_R"]),
+            "Color_G": float(row["Color_G"]),
+            "Color_B": float(row["Color_B"]),
         })
 
 #Resolve Animated Objects
@@ -79,6 +85,7 @@ for obj in animated_objects:
 for row in rows:
     obj = bpy.data.objects[row["Activity"]]
 
+
     # material
     if not obj.data.materials:
         mat = bpy.data.materials.new(name=f"{obj.name}_mat")
@@ -95,6 +102,13 @@ for row in rows:
 
     bsdf = mat.node_tree.nodes["Principled BSDF"]
 
+    r = float(row["Color_R"])
+    g = float(row["Color_G"])
+    b = float(row["Color_B"])
+
+    print("BLENDER: ,")
+    print(r, g, b)
+
     #Pre Start
     bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
     if row["Start Frame"] > 2:
@@ -104,7 +118,7 @@ for row in rows:
 
     # start
     obj.hide_render = False
-    bsdf.inputs["Base Color"].default_value = (1, 0, 0, 1)
+    bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
     obj.keyframe_insert("hide_render", frame=row["Start Frame"])
     bsdf.inputs["Base Color"].keyframe_insert(
         "default_value", frame=row["Start Frame"]
@@ -112,7 +126,7 @@ for row in rows:
 
 
     #Pre End
-    bsdf.inputs["Base Color"].default_value = (1, 0, 0, 1)
+    bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
     bsdf.inputs["Base Color"].keyframe_insert(
         "default_value", frame=row["End Frame"]-1
     )
@@ -170,8 +184,8 @@ subprocess.run([
     "output.mp4"
 ], check=True, cwd=run_dir)
 
-shutil.rmtree(frames_dir)
-os.remove(concat_path)
+shutil.rmtree(frames_dir) #Delte using shutil library recursive tree ver
+os.remove(concat_path) #frames.txt is kept elsewhere and deleted this way
 
 
 

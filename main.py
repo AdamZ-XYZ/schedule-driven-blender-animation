@@ -22,7 +22,7 @@ def parse_args():
 
     parser.add_argument(
         "--visual_type",
-        choices=["Simple","WBS"],
+        choices=["Simple","WBS","Company","ActivityType"],
         default="Simple",
         help="default: 'Simple', else: 'WBS'",
         required = False
@@ -42,7 +42,7 @@ def main():
 
     if args.visual_type == "WBS" and not args.top_wbs:
         parser.error("--top_wbs is required when --visual-type=WBS")
-        exit()
+
 
     blend_file = os.path.abspath(args.blend_file)
 
@@ -79,20 +79,43 @@ def main():
         schedule = pd.read_csv(schedule_csv)
 
         # WBS Filtering - Re Rooting Approach
-        top_wbs = args.top_wbs
-        mask = schedule["WBS"].astype(str).apply(
-            lambda wbs: top_wbs in wbs.split(".")
-        )
-        schedule = schedule[mask]
-        
-        def reroot_wbs(wbs, root):
-            parts = wbs.split(".")
-            idx = parts.index(root)
-            return ".".join(parts[idx:])
-        
-        schedule["WBS"] = schedule["WBS"].apply(
-            lambda wbs: reroot_wbs(wbs, top_wbs)
-        )
+        if args.top_wbs:
+            top_wbs = args.top_wbs
+            mask = schedule["WBS"].astype(str).apply(
+                lambda wbs: top_wbs in wbs.split(".")
+            )
+            schedule = schedule[mask]
+            
+            def reroot_wbs(wbs, root):
+                parts = wbs.split(".")
+                idx = parts.index(root)
+                return ".".join(parts[idx:])
+            
+            schedule["WBS"] = schedule["WBS"].apply(
+                lambda wbs: reroot_wbs(wbs, top_wbs)
+            )
+
+        # Company/Activity Filtering
+        if args.visual_type == "Company" or args.visual_type == "ActivityType":
+            values = sorted(schedule[args.visual_type].unique())
+
+            import colorsys
+
+            def generate_palette(n, s=0.8, v=0.9):
+                colors = []
+                for i in range(n):
+                    h = i / n
+                    r, g, b = colorsys.hsv_to_rgb(h, s, v)
+                    colors.append((r, g, b, 1.0))
+                    print(r, g, b)
+                return colors
+            
+            palette = generate_palette(len(values))
+
+            ColorDictionary = {
+                group: palette[i]
+                for i, group in enumerate(values)
+            }
 
 
         for row in schedule.to_dict(orient="records"):
@@ -112,7 +135,13 @@ def main():
             "Activity": schedule["Activity"],
             "Start Frame": ((schedule["Start"] - true_start) * fps).astype(int),
             "End Frame": ((schedule["End"] - true_start) * fps).astype(int),
+            "Color_R": schedule[args.visual_type].map(lambda c: ColorDictionary[c][0]),
+            "Color_G": schedule[args.visual_type].map(lambda c: ColorDictionary[c][1]),
+            "Color_B": schedule[args.visual_type].map(lambda c: ColorDictionary[c][2]),
         })
+
+        print(processed.head())
+
 
         tmp = tempfile.NamedTemporaryFile(
             suffix=".csv",

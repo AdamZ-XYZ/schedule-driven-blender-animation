@@ -9,8 +9,8 @@ envs/
 .DS_Store
 
 # Blender
-*.blend1
-*.blend2
+*.blend
+
 
 # Outputs
 renders/
