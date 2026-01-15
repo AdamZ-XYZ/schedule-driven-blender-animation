@@ -33,6 +33,18 @@ def parse_args():
         help="Top-level WBS to filter from (required if visual-type=WBS)"
     )
 
+    parser.add_argument(
+        "--cam_select",
+        default = "Camera",
+        help="Camera Selection: Comma-separated camera names to include, first:N"
+    )
+
+    parser.add_argument(
+    "--cam_exclude",
+    default="",
+    help="Comma-separated camera names to exclude"
+)
+
     return parser
 
 
@@ -131,16 +143,22 @@ def main():
         true_start = schedule["Start"].min()
         fps = 1
 
-        processed = pd.DataFrame({
-            "Activity": schedule["Activity"],
-            "Start Frame": ((schedule["Start"] - true_start) * fps).astype(int),
-            "End Frame": ((schedule["End"] - true_start) * fps).astype(int),
-            "Color_R": schedule[args.visual_type].map(lambda c: ColorDictionary[c][0]),
-            "Color_G": schedule[args.visual_type].map(lambda c: ColorDictionary[c][1]),
-            "Color_B": schedule[args.visual_type].map(lambda c: ColorDictionary[c][2]),
-        })
+        if args.visual_type == "Company" or args.visual_type == "ActivityType": #Quick Fix
+            processed = pd.DataFrame({
+                "Activity": schedule["Activity"],
+                "Start Frame": ((schedule["Start"] - true_start) * fps).astype(int),
+                "End Frame": ((schedule["End"] - true_start) * fps).astype(int),
+                "Color_R": schedule[args.visual_type].map(lambda c: ColorDictionary[c][0]),
+                "Color_G": schedule[args.visual_type].map(lambda c: ColorDictionary[c][1]),
+                "Color_B": schedule[args.visual_type].map(lambda c: ColorDictionary[c][2]),
+            })
+        else: 
+            processed = pd.DataFrame({
+                "Activity": schedule["Activity"],
+                "Start Frame": ((schedule["Start"] - true_start) * fps).astype(int),
+                "End Frame": ((schedule["End"] - true_start) * fps).astype(int),
+            })
 
-        print(processed.head())
 
 
         tmp = tempfile.NamedTemporaryFile(

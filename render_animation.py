@@ -5,29 +5,48 @@ import csv
 import subprocess
 import shutil
 import time
-
-t0 = time.perf_counter()
-
+import argparse
 
 
-argv = sys.argv
-argv = argv[argv.index("--") + 1:]
+raw_argv = sys.argv
+script_argv = raw_argv[raw_argv.index("--") + 1:] if "--" in raw_argv else []
 
-if len(argv) != 2:
-    raise RuntimeError("Expected arguments: <processed_schedule.csv> <output_dir>")
+def parse_args(argv):
+    parser = argparse.ArgumentParser(
+        description="Blender render orchestration"
+    )
 
-schedule_csv = argv[0]
-print("CSV BEING READ:", schedule_csv)
-run_dir = argv[1]
+    parser.add_argument(
+        "schedule_csv",
+        help="Processed schedule CSV"
+    )
+
+    parser.add_argument(
+        "run_dir",
+        help="Output directory for this run"
+    )
+
+    parser.add_argument(
+        "--cam_select",
+        default="all",
+        help="Camera selection: all | first:N | CamA,CamB"
+    )
+
+    parser.add_argument(
+        "--cam_exclude",
+        default="",
+        help="Comma-separated camera names to exclude"
+    )
+
+    return parser.parse_args(argv)
+
+args = parse_args(script_argv)
+
+
+schedule_csv = args.schedule_csv
+run_dir = args.run_dir
 
 os.makedirs(run_dir, exist_ok=True)
-
-frames_dir = os.path.join(run_dir, "frames")
-os.makedirs(frames_dir, exist_ok=True)
-
-
-
-
 
 #Scene Setup
 scene = bpy.context.scene
@@ -36,9 +55,7 @@ scene.render.fps = 10
 scene.render.image_settings.file_format = "PNG"
 scene.render.use_motion_blur = False
 
-
 # render
-scene.camera = bpy.data.objects["Camera"]
 scene.render.resolution_x =  1280
 scene.render.resolution_y =  720
 
@@ -53,9 +70,9 @@ with open(schedule_csv, newline="") as f:
             "Activity": row["Activity"],
             "Start Frame": int(row["Start Frame"]),
             "End Frame": int(row["End Frame"]),
-            "Color_R": float(row["Color_R"]),
-            "Color_G": float(row["Color_G"]),
-            "Color_B": float(row["Color_B"]),
+            "Color_R": float(row.get("Color_R", 1.0)),
+            "Color_G": float(row.get("Color_G", 0.0)),
+            "Color_B": float(row.get("Color_B", 0.0)),
         })
 
 #Resolve Animated Objects
@@ -78,8 +95,48 @@ for obj in animated_objects:
     obj.keyframe_insert("hide_render", frame=0)
     obj.keyframe_insert("hide_viewport", frame=0)
 
+# Camera Select Handling
+all_cameras = sorted(
+    [obj for obj in bpy.data.objects if obj.type == "CAMERA"],
+    key=lambda o: o.name
+)
 
-#Apply Animation logic per row
+arg = args.cam_select
+
+if arg == "all":
+    selected = all_cameras
+
+elif arg.startswith("first:"):
+    n = int(arg.split(":")[1])
+    selected = all_cameras[:n]
+
+else:
+    names = set(arg.split(","))
+    selected = [c for c in all_cameras if c.name in names]
+
+if args.cam_exclude:
+    exclude = set(args.cam_exclude.split(","))
+    selected = [c for c in selected if c.name not in exclude    ]
+
+if not selected:
+    raise RuntimeError(
+        f"No cameras selected. "
+        f"Available cameras: {[c.name for c in all_cameras]}"
+    )
+
+if arg not in ("all",) and not arg.startswith("first:"):
+    requested = set(arg.split(","))
+    found = {c.name for c in selected}
+    missing = requested - found
+
+    if missing:
+        raise RuntimeError(
+            f"Unknown camera(s): {', '.join(sorted(missing))}"
+        )
+
+
+#Apply Animation logic per row - Now included Camera Loop
+
 
 
 for row in rows:
@@ -106,8 +163,6 @@ for row in rows:
     g = float(row["Color_G"])
     b = float(row["Color_B"])
 
-    print("BLENDER: ,")
-    print(r, g, b)
 
     #Pre Start
     bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
@@ -144,48 +199,60 @@ for row in rows:
     event_frames.add(row["End Frame"])
 
 
+
 event_frames = sorted(event_frames)
 
-for frame in event_frames:
-    scene.frame_set(frame)
-    scene.render.filepath = os.path.join(frames_dir, f"frame_{frame:04d}.png")
-    bpy.ops.render.render(write_still=True)
 
-t1 = time.perf_counter()
-print(f"Rendered {len(event_frames)} frames in {t1 - t0:.2f}s")
-
-#FFMPEG 
-
-fps = scene.render.fps
-concat_path = os.path.join(run_dir, "frames.txt")
-
-with open(concat_path, "w") as f:
-    for i, frame in enumerate(event_frames):
-        f.write(f"file 'frames/frame_{frame:04d}.png'\n")
-
-        if i < len(event_frames) - 1:
-            duration = (event_frames[i + 1] - frame) / fps
-            f.write(f"duration {duration}\n")
-
-    # repeat last frame (ffmpeg requirement)
-    f.write(f"file 'frames/frame_{event_frames[-1]:04d}.png'\n")
+for cam in selected:
+    scene.camera = cam
+    cam_run_dir = os.path.join(run_dir, cam.name)
+    frames_dir = os.path.join(cam_run_dir, "frames")
+    os.makedirs(frames_dir, exist_ok=True)
 
 
 
-output_mp4 = os.path.join(run_dir, "output.mp4")
 
-subprocess.run([
-    "ffmpeg", "-y",
-    "-f", "concat",
-    "-safe", "0",
-    "-i", "frames.txt",
-    "-fps_mode", "vfr",
-    "-pix_fmt", "yuv420p",
-    "output.mp4"
-], check=True, cwd=run_dir)
+    for frame in event_frames:
+        scene.frame_set(frame)
+        scene.render.filepath = os.path.join(
+            frames_dir, f"frame_{frame:04d}.png"
+        )
+        bpy.ops.render.render(write_still=True)
 
-shutil.rmtree(frames_dir) #Delte using shutil library recursive tree ver
-os.remove(concat_path) #frames.txt is kept elsewhere and deleted this way
+    #FFMPEG 
+
+    fps = scene.render.fps
+    concat_path = os.path.join(cam_run_dir, "frames.txt")
+
+    with open(concat_path, "w") as f:
+        for i, frame in enumerate(event_frames):
+            png_path = os.path.abspath(
+                os.path.join(frames_dir, f"frame_{frame:04d}.png")
+            )
+            f.write(f"file '{png_path}'\n")
+
+            if i < len(event_frames) - 1:
+                duration = (event_frames[i + 1] - frame) / fps
+                f.write(f"duration {duration}\n")
+
+        f.write(f"file '{png_path}'\n")
+
+
+
+    output_mp4 = os.path.join(cam_run_dir, "output.mp4")
+
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concat_path,
+        "-fps_mode", "vfr",
+        "-pix_fmt", "yuv420p",
+        output_mp4
+    ], check=True)
+
+    shutil.rmtree(frames_dir) #Delte using shutil library recursive tree ver
+    os.remove(concat_path) #frames.txt is kept elsewhere and deleted this way
 
 
 

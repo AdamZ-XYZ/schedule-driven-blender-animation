@@ -22,3 +22,6 @@ output/
 .vscode/
 .idea/
 
+#Personal Notes
+*.md
+learnings/
