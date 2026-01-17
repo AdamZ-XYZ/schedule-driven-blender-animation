@@ -1,5 +1,5 @@
-﻿Activity,Start,End,WBS,Company,ActivityType
-Cube,1,10,x.y,Greggs,Food
-Cube.001,1,10,x.y.z,Microsoft,Software
-Cube.002,1,10,a.b,Apple,Hardware
-Cube.003,1,10,m,Milanos,Food
+﻿Activity,Start,End,WBS,Company,ActivityType,Resources
+Cube,1,5,x.y,Greggs,Food,1000
+Cube.001,1,10,x.y.z,Microsoft,Software,500
+Cube.002,1,15,a.b,Apple,Hardware,200
+Cube.003,1,20,m,Milanos,Food,100

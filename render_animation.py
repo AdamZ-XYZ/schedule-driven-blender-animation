@@ -135,56 +135,59 @@ if camera_selection not in ("all",) and not camera_selection.startswith("first:"
 
 
 #Apply Animation logic per row
-obj = bpy.data.objects[row["Activity"]]
+for row in rows:
+    obj = bpy.data.objects[row["Activity"]]
 
-#Material Handling
-if not obj.data.materials:
-    mat = bpy.data.materials.new(name=f"{obj.name}_mat")
-    mat.use_nodes = True
-    obj.data.materials.append(mat)
-else:
-    mat = obj.data.materials[0]
 
-# CRITICAL: make it unique
-if mat.users > 1:
-    mat = mat.copy()
-    obj.data.materials[0] = mat
+    #Material Handling
+    if not obj.data.materials:
+        mat = bpy.data.materials.new(name=f"{obj.name}_mat")
+        mat.use_nodes = True
+        obj.data.materials.append(mat)
+    else:
+        mat = obj.data.materials[0]
 
-bsdf = mat.node_tree.nodes["Principled BSDF"]
+    # CRITICAL: make it unique
+    if mat.users > 1:
+        mat = mat.copy()
+        obj.data.materials[0] = mat
 
-r = float(row["Color_R"])
-g = float(row["Color_G"])
-b = float(row["Color_B"])
+    bsdf = mat.node_tree.nodes["Principled BSDF"]
 
-#Keyframe
+    r = float(row["Color_R"])
+    g = float(row["Color_G"])
+    b = float(row["Color_B"])
 
-#Pre Start - Ensure color starts neutral
-bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
-if row["Start Frame"] > 2:
+
+    #Keyframe
+
+    #Pre Start - Ensure color starts neutral
+    bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
+    if row["Start Frame"] > 2:
+        bsdf.inputs["Base Color"].keyframe_insert(
+            "default_value", frame=row["Start Frame"]-1
+        )
+
+    #Start - Set render & color
+    obj.hide_render = False
+    bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
+    obj.keyframe_insert("hide_render", frame=row["Start Frame"])
     bsdf.inputs["Base Color"].keyframe_insert(
-        "default_value", frame=row["Start Frame"]-1
+        "default_value", frame=row["Start Frame"]
     )
 
-#Start - Set render & color
-obj.hide_render = False
-bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
-obj.keyframe_insert("hide_render", frame=row["Start Frame"])
-bsdf.inputs["Base Color"].keyframe_insert(
-    "default_value", frame=row["Start Frame"]
-)
 
+    #Pre End - Ensures color remains fully active until end
+    bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
+    bsdf.inputs["Base Color"].keyframe_insert(
+        "default_value", frame=row["End Frame"]-1
+    )
 
-#Pre End - Ensures color remains fully active until end
-bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
-bsdf.inputs["Base Color"].keyframe_insert(
-    "default_value", frame=row["End Frame"]-1
-)
-
-#End - deactivate - currently no removal options.
-bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
-bsdf.inputs["Base Color"].keyframe_insert(
-    "default_value", frame=row["End Frame"]
-)
+    #End - deactivate - currently no removal options.
+    bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
+    bsdf.inputs["Base Color"].keyframe_insert(
+        "default_value", frame=row["End Frame"]
+    )
 
 event_frames = set()
 

@@ -21,7 +21,7 @@ def create_parser():
 
     parser.add_argument(
         "--visual_type",
-        choices=["Simple","WBS","Company","ActivityType"],
+        choices=["Simple","WBS","Company","ActivityType","Heatmap"],
         default="Simple",
         help="default: 'Simple', else: 'WBS'",
         required = False
@@ -117,7 +117,7 @@ def main():
             )
 
         # Company/Activity Filtering
-        if args.visual_type == "Company" or args.visual_type == "ActivityType":
+        if args.visual_type in ("Company", "ActivityType"):
             filterValue = sorted(schedule[args.visual_type].unique())
 
             import colorsys
@@ -136,6 +136,15 @@ def main():
                 group: palette[i]
                 for i, group in enumerate(filterValue)
             }
+
+        #Resource normalisation
+        if args.visual_type == "Heatmap":
+            day_span = schedule["End"] - schedule["Start"]
+            schedule["Resources"] = schedule["Resources"] / day_span
+
+            max_daily = schedule["Resources"].max()
+            schedule["Resources"] = schedule["Resources"] / max_daily
+        
 
         #Evaluate schedule chronology logic
         for row in schedule.to_dict(orient="records"):
@@ -156,6 +165,7 @@ def main():
             "Activity": schedule["Activity"],
             "Start Frame": ((schedule["Start"] - true_start) * fps).astype(int),
             "End Frame": ((schedule["End"] - true_start) * fps).astype(int),
+            "Daily Resource":schedule["Resources"]
         })
 
         # Optional Color implementation
@@ -165,6 +175,13 @@ def main():
                 .map(ColorDictionary)
                 .apply(pd.Series)
             )
+
+        
+        if args.visual_type in ("Heatmap"):
+            processed["Color_R"] = processed["Daily Resource"]
+            processed["Color_G"] = 0
+            processed["Color_B"] = 1 - processed["Daily Resource"]
+
 
      
         # Creating temp.csv for blender
@@ -176,10 +193,10 @@ def main():
         tmp.close()
 
         temp_csv_path = tmp.name
-
         blender_exe = "/Applications/Blender.app/Contents/MacOS/Blender"
         blender_script = os.path.abspath("render_animation.py")
-
+       
+    
         subprocess.run([
             blender_exe,
             "--background",
