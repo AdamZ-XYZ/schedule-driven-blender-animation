@@ -4,14 +4,14 @@ import os
 import csv
 import subprocess
 import shutil
-import time
 import argparse
 
-
+#Seperate out blender arguments from system arguments.
 raw_argv = sys.argv
 script_argv = raw_argv[raw_argv.index("--") + 1:] if "--" in raw_argv else []
 
-def parse_args(argv):
+#Pass in sanetised arguments.
+def create_parser(argv):
     parser = argparse.ArgumentParser(
         description="Blender render orchestration"
     )
@@ -40,25 +40,23 @@ def parse_args(argv):
 
     return parser.parse_args(argv)
 
-args = parse_args(script_argv)
+args = create_parser(script_argv)
 
-
+#Pass Schedule
 schedule_csv = args.schedule_csv
-run_dir = args.run_dir
 
+#Pass & make run directory
+run_dir = args.run_dir
 os.makedirs(run_dir, exist_ok=True)
 
-#Scene Setup
+#Scene & Render Setup
 scene = bpy.context.scene
 scene.render.engine = 'BLENDER_EEVEE_NEXT'
-scene.render.fps = 10
 scene.render.image_settings.file_format = "PNG"
 scene.render.use_motion_blur = False
-
-# render
+scene.render.fps = 10 #why is FPS 1 in main but 10 here? Good question.
 scene.render.resolution_x =  1280
 scene.render.resolution_y =  720
-
 
 
 # Load Processed Schedule
@@ -88,30 +86,30 @@ for row in rows:
 animated_objects = list({obj.name: obj for obj in animated_objects}.values())
 
 #Initial Global Hide
-
 for obj in animated_objects:
     obj.hide_render = True
     obj.hide_viewport = True
     obj.keyframe_insert("hide_render", frame=0)
     obj.keyframe_insert("hide_viewport", frame=0)
 
-# Camera Select Handling
+#Camera Select Handling
 all_cameras = sorted(
     [obj for obj in bpy.data.objects if obj.type == "CAMERA"],
-    key=lambda o: o.name
+    key=lambda obj: obj.name
 )
 
-arg = args.cam_select
+#"c" refers to camera object. 
+camera_selection = args.cam_select
 
-if arg == "all":
+if camera_selection == "all":
     selected = all_cameras
 
-elif arg.startswith("first:"):
-    n = int(arg.split(":")[1])
+elif camera_selection.startswith("first:"):
+    n = int(camera_selection.split(":")[1])
     selected = all_cameras[:n]
 
 else:
-    names = set(arg.split(","))
+    names = set(camera_selection.split(","))
     selected = [c for c in all_cameras if c.name in names]
 
 if args.cam_exclude:
@@ -124,8 +122,9 @@ if not selected:
         f"Available cameras: {[c.name for c in all_cameras]}"
     )
 
-if arg not in ("all",) and not arg.startswith("first:"):
-    requested = set(arg.split(","))
+#Explicit mention of bad camera names
+if camera_selection not in ("all",) and not camera_selection.startswith("first:"):
+    requested = set(camera_selection.split(","))
     found = {c.name for c in selected}
     missing = requested - found
 
@@ -135,62 +134,57 @@ if arg not in ("all",) and not arg.startswith("first:"):
         )
 
 
-#Apply Animation logic per row - Now included Camera Loop
+#Apply Animation logic per row
+obj = bpy.data.objects[row["Activity"]]
 
+#Material Handling
+if not obj.data.materials:
+    mat = bpy.data.materials.new(name=f"{obj.name}_mat")
+    mat.use_nodes = True
+    obj.data.materials.append(mat)
+else:
+    mat = obj.data.materials[0]
 
+# CRITICAL: make it unique
+if mat.users > 1:
+    mat = mat.copy()
+    obj.data.materials[0] = mat
 
-for row in rows:
-    obj = bpy.data.objects[row["Activity"]]
+bsdf = mat.node_tree.nodes["Principled BSDF"]
 
+r = float(row["Color_R"])
+g = float(row["Color_G"])
+b = float(row["Color_B"])
 
-    # material
-    if not obj.data.materials:
-        mat = bpy.data.materials.new(name=f"{obj.name}_mat")
-        mat.use_nodes = True
-        obj.data.materials.append(mat)
-    else:
-        mat = obj.data.materials[0]
+#Keyframe
 
-    # CRITICAL: make it unique
-    if mat.users > 1:
-        mat = mat.copy()
-        obj.data.materials[0] = mat
-
-
-    bsdf = mat.node_tree.nodes["Principled BSDF"]
-
-    r = float(row["Color_R"])
-    g = float(row["Color_G"])
-    b = float(row["Color_B"])
-
-
-    #Pre Start
-    bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
-    if row["Start Frame"] > 2:
-        bsdf.inputs["Base Color"].keyframe_insert(
-            "default_value", frame=row["Start Frame"]-1
-        )
-
-    # start
-    obj.hide_render = False
-    bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
-    obj.keyframe_insert("hide_render", frame=row["Start Frame"])
+#Pre Start - Ensure color starts neutral
+bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
+if row["Start Frame"] > 2:
     bsdf.inputs["Base Color"].keyframe_insert(
-        "default_value", frame=row["Start Frame"]
+        "default_value", frame=row["Start Frame"]-1
     )
 
+#Start - Set render & color
+obj.hide_render = False
+bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
+obj.keyframe_insert("hide_render", frame=row["Start Frame"])
+bsdf.inputs["Base Color"].keyframe_insert(
+    "default_value", frame=row["Start Frame"]
+)
 
-    #Pre End
-    bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
-    bsdf.inputs["Base Color"].keyframe_insert(
-        "default_value", frame=row["End Frame"]-1
-    )
 
-    # end
-    bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
-    bsdf.inputs["Base Color"].keyframe_insert(
-        "default_value", frame=row["End Frame"]
-    )
+#Pre End - Ensures color remains fully active until end
+bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
+bsdf.inputs["Base Color"].keyframe_insert(
+    "default_value", frame=row["End Frame"]-1
+)
+
+#End - deactivate - currently no removal options.
+bsdf.inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
+bsdf.inputs["Base Color"].keyframe_insert(
+    "default_value", frame=row["End Frame"]
+)
 
 event_frames = set()
 

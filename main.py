@@ -3,9 +3,8 @@ import pandas as pd
 import argparse
 import os
 import subprocess
-import sys
 
-def parse_args():
+def create_parser(): 
     parser = argparse.ArgumentParser(
         description="Schedule-driven Blender assembly animation"
     )
@@ -35,7 +34,7 @@ def parse_args():
 
     parser.add_argument(
         "--cam_select",
-        default = "Camera",
+        default = "Camera", #Default to be determined
         help="Camera Selection: Comma-separated camera names to include, first:N"
     )
 
@@ -47,33 +46,35 @@ def parse_args():
 
     return parser
 
-
 def main():
-    parser = parse_args()
+    parser = create_parser()           
     args = parser.parse_args()
 
+    #CLI optional argument validation
     if args.visual_type == "WBS" and not args.top_wbs:
         parser.error("--top_wbs is required when --visual-type=WBS")
 
-
+    #File existence checks
     blend_file = os.path.abspath(args.blend_file)
-
     if not os.path.isfile(blend_file):
         raise FileNotFoundError(f"Blend file not found: {blend_file}")
 
     schedule_input = os.path.abspath(args.schedule_input)
-
     if not os.path.exists(schedule_input):
         raise FileNotFoundError(f"Schedule input not found: {schedule_input}")
 
+    # Determine Schedule file vs directory
     if os.path.isfile(schedule_input):
-        schedule_files = [schedule_input]
+        if schedule_input.lower().endswith(".csv"):
+            schedule_files = [schedule_input]
+        else: 
+            raise RuntimeError("Schedule input must be a CSV file or directory")
 
     elif os.path.isdir(schedule_input):
         schedule_files = sorted(
             os.path.join(schedule_input, f)
             for f in os.listdir(schedule_input)
-            if f.lower().endswith(".csv")
+            if f.lower().endswith(".csv") 
         )
 
         if not schedule_files:
@@ -82,37 +83,44 @@ def main():
     else:
         raise RuntimeError("Schedule input must be a CSV file or directory")
     
+
+    #CSV Handling
     for schedule_csv in schedule_files:
 
+        #Create Outputs\{Schedule_name}
         schedule_name = os.path.splitext(os.path.basename(schedule_csv))[0]
         run_dir = os.path.join("outputs", schedule_name)
         os.makedirs(run_dir, exist_ok=True)
 
+        #CSV Transformation for Blender 
         schedule = pd.read_csv(schedule_csv)
 
-        # WBS Filtering - Re Rooting Approach
+        # WBS Filtering
         if args.top_wbs:
             top_wbs = args.top_wbs
+            
+            #Mask out anything not containing top_wbs
             mask = schedule["WBS"].astype(str).apply(
                 lambda wbs: top_wbs in wbs.split(".")
             )
             schedule = schedule[mask]
             
+            #Currently Reroot is not necessary
+            #Supports future WBS features i.e Level filtering etc.
             def reroot_wbs(wbs, root):
                 parts = wbs.split(".")
                 idx = parts.index(root)
-                return ".".join(parts[idx:])
+                return ".".join(parts[idx:]) #From Index -> End
             
             schedule["WBS"] = schedule["WBS"].apply(
-                lambda wbs: reroot_wbs(wbs, top_wbs)
+                lambda wbs: reroot_wbs(wbs, top_wbs) #replace w new root
             )
 
         # Company/Activity Filtering
         if args.visual_type == "Company" or args.visual_type == "ActivityType":
-            values = sorted(schedule[args.visual_type].unique())
+            filterValue = sorted(schedule[args.visual_type].unique())
 
             import colorsys
-
             def generate_palette(n, s=0.8, v=0.9):
                 colors = []
                 for i in range(n):
@@ -122,14 +130,14 @@ def main():
                     print(r, g, b)
                 return colors
             
-            palette = generate_palette(len(values))
+            palette = generate_palette(len(filterValue))
 
             ColorDictionary = {
                 group: palette[i]
-                for i, group in enumerate(values)
+                for i, group in enumerate(filterValue)
             }
 
-
+        #Evaluate schedule chronology logic
         for row in schedule.to_dict(orient="records"):
             
             start = row["Start"]
@@ -140,27 +148,26 @@ def main():
                     f"End < Start ({end} < {start})"
                 )
 
-        true_start = schedule["Start"].min()
+        #Converting times to keyframe values]
+        true_start = schedule["Start"].min() #First frame - Lowest frame = 0
         fps = 1
 
-        if args.visual_type == "Company" or args.visual_type == "ActivityType": #Quick Fix
-            processed = pd.DataFrame({
-                "Activity": schedule["Activity"],
-                "Start Frame": ((schedule["Start"] - true_start) * fps).astype(int),
-                "End Frame": ((schedule["End"] - true_start) * fps).astype(int),
-                "Color_R": schedule[args.visual_type].map(lambda c: ColorDictionary[c][0]),
-                "Color_G": schedule[args.visual_type].map(lambda c: ColorDictionary[c][1]),
-                "Color_B": schedule[args.visual_type].map(lambda c: ColorDictionary[c][2]),
-            })
-        else: 
-            processed = pd.DataFrame({
-                "Activity": schedule["Activity"],
-                "Start Frame": ((schedule["Start"] - true_start) * fps).astype(int),
-                "End Frame": ((schedule["End"] - true_start) * fps).astype(int),
-            })
+        processed = pd.DataFrame({
+            "Activity": schedule["Activity"],
+            "Start Frame": ((schedule["Start"] - true_start) * fps).astype(int),
+            "End Frame": ((schedule["End"] - true_start) * fps).astype(int),
+        })
 
+        # Optional Color implementation
+        if args.visual_type in ("Company", "ActivityType"):
+            processed[["Color_R", "Color_G", "Color_B"]] = (
+                schedule[args.visual_type]
+                .map(ColorDictionary)
+                .apply(pd.Series)
+            )
 
-
+     
+        # Creating temp.csv for blender
         tmp = tempfile.NamedTemporaryFile(
             suffix=".csv",
             delete=False

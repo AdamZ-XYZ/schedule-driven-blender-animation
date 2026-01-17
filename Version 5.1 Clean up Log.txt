@@ -1,0 +1,19 @@
+Version 5.1 Clean Up Log
+
+#main.py
+* Commenting general purpose of code blocks above them
+
+* Changing stupid name of "def parse_args" to -> "def create_parser" to reflect actual function.
+
+* Adding explicit CSV file check and raising eearly runTime error. 
+
+* renamed "value" -> "filterValue" for added clarity in company/activity filtering.
+
+* Cleaned up optional color processing implementation
+
+#render_animation.py
+* Changing stupid name of "def parse_args" to -> "def create_parser" to reflect actual function.
+
+* changing "o: o.name" to "obj : obj:name" for added clarity
+
+* changed "arg" to "camera_selection" for added clarity
