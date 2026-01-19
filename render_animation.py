@@ -2,8 +2,6 @@ import bpy
 import sys
 import os
 import csv
-import subprocess
-import shutil
 import argparse
 
 #Seperate out blender arguments from system arguments.
@@ -16,26 +14,18 @@ def create_parser(argv):
         description="Blender render orchestration"
     )
 
-    parser.add_argument(
-        "schedule_csv",
-        help="Processed schedule CSV"
-    )
+    parser.add_argument("schedule_csv" )
 
-    parser.add_argument(
-        "run_dir",
-        help="Output directory for this run"
-    )
+    parser.add_argument("run_dir")
 
     parser.add_argument(
         "--cam_select",
         default="all",
-        help="Camera selection: all | first:N | CamA,CamB"
     )
 
     parser.add_argument(
         "--cam_exclude",
         default="",
-        help="Comma-separated camera names to exclude"
     )
 
     return parser.parse_args(argv)
@@ -54,7 +44,7 @@ scene = bpy.context.scene
 scene.render.engine = 'BLENDER_EEVEE_NEXT'
 scene.render.image_settings.file_format = "PNG"
 scene.render.use_motion_blur = False
-scene.render.fps = 10 #why is FPS 1 in main but 10 here? Good question.
+scene.render.fps = 10 
 scene.render.resolution_x =  1280
 scene.render.resolution_y =  720
 
@@ -215,41 +205,5 @@ for cam in selected:
             frames_dir, f"frame_{frame:04d}.png"
         )
         bpy.ops.render.render(write_still=True)
-
-    #FFMPEG 
-
-    fps = scene.render.fps
-    concat_path = os.path.join(cam_run_dir, "frames.txt")
-
-    with open(concat_path, "w") as f:
-        for i, frame in enumerate(event_frames):
-            png_path = os.path.abspath(
-                os.path.join(frames_dir, f"frame_{frame:04d}.png")
-            )
-            f.write(f"file '{png_path}'\n")
-
-            if i < len(event_frames) - 1:
-                duration = (event_frames[i + 1] - frame) / fps
-                f.write(f"duration {duration}\n")
-
-        f.write(f"file '{png_path}'\n")
-
-
-
-    output_mp4 = os.path.join(cam_run_dir, "output.mp4")
-
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", concat_path,
-        "-fps_mode", "vfr",
-        "-pix_fmt", "yuv420p",
-        output_mp4
-    ], check=True)
-
-    shutil.rmtree(frames_dir) #Delte using shutil library recursive tree ver
-    os.remove(concat_path) #frames.txt is kept elsewhere and deleted this way
-
-
+    
 
